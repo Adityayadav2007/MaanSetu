@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', 'Segoe UI', 'Noto Sans', system-ui, sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Government portals conventionally use a serif face for statutory headings */
+.font-gov-heading {
+  font-family: 'Georgia', 'Noto Serif', serif;
+}
+
+/* Accessibility: visible focus ring on all interactive elements (GIGW compliance) */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #ea580c;
+  outline-offset: 2px;
+}
+
+/* Skip-to-content link, revealed on keyboard focus */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1.25rem;
+  background: #1e3a8a;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
