@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Environment — contains JWT_SECRET and database credentials
+.env
+.env.local
+.env.*.local
+
+# Uploaded Rule 10 documents
+backend/uploads/
+uploads/
+
+# Test artefacts
+coverage/
+.nyc_output/
+*.log
+npm-debug.log*
+
+# Embedded test database data directories
+.pgdata/
+pgdata/
+
+# Build output
+MaanSetu/frontend/dist/
+dist/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp

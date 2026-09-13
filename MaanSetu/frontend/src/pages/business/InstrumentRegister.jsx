@@ -4,6 +4,7 @@ import { Upload, X, CheckCircle2, Info } from 'lucide-react'
 import PortalLayout from '../../components/layout/PortalLayout'
 import { BUSINESS_NAV } from './BusinessDashboard'
 import { TextField, SelectField, TextAreaField, FormSection } from '../../components/common/FormField'
+import { instrumentApi } from '../../services/api'
 import {
   INSTRUMENT_CATEGORIES, ACCURACY_CLASSES, DOCUMENT_TYPES, STATES,
   getCategoryByCode,
@@ -50,6 +51,8 @@ export default function InstrumentRegister() {
   const navigate = useNavigate()
   const [form, setForm] = useState(EMPTY)
   const [docs, setDocs] = useState([])
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
   const [errors, setErrors] = useState({})
   const [submitted, setSubmitted] = useState(null)
 
@@ -133,18 +136,31 @@ export default function InstrumentRegister() {
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(ev) {
+  async function handleSubmit(ev) {
     ev.preventDefault()
     if (!validate()) {
       document.querySelector('[aria-invalid="true"]')?.focus()
       return
     }
-    // Mock persistence — replace with POST /api/instruments.
-    const id = `INS-UP-${new Date().getFullYear()}-${String(
-      Math.floor(Math.random() * 900000) + 100000,
-    )}`
-    setSubmitted(id)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      // Drop empty strings so the server sees absent optional fields rather
+      // than blank ones; Joi distinguishes the two.
+      const payload = {}
+      for (const [key, value] of Object.entries(form)) {
+        if (String(value).trim() !== '') payload[key] = value
+      }
+      const result = await instrumentApi.create(payload)
+      setSubmitted(result.instrumentId)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (err) {
+      setSubmitError(err.message)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (submitted) {
@@ -197,6 +213,19 @@ export default function InstrumentRegister() {
           marked <span className="text-red-600">*</span> are mandatory.
         </p>
       </div>
+
+      {submitError && (
+        <div
+          className="mb-4 flex gap-3 rounded border-l-4 border-red-600 bg-red-50 p-4"
+          role="alert"
+        >
+          <Info size={18} className="mt-0.5 shrink-0 text-red-700" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-bold text-red-900">Instrument not registered</p>
+            <p className="mt-0.5 text-xs text-red-800">{submitError}</p>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} noValidate className="rounded border border-slate-200 bg-white p-6">
         <div className="space-y-7">
@@ -471,10 +500,12 @@ export default function InstrumentRegister() {
           <div className="flex flex-wrap gap-3 border-t border-slate-200 pt-5">
             <button
               type="submit"
+              disabled={submitting}
               className="rounded bg-gov-blue px-5 py-2.5 text-sm font-semibold text-white
-                         hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-gov-blue focus:ring-offset-2"
+                         hover:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60
+                         focus:outline-none focus:ring-2 focus:ring-gov-blue focus:ring-offset-2"
             >
-              Register Instrument
+              {submitting ? 'Registering…' : 'Register Instrument'}
             </button>
             <button
               type="button"

@@ -12,7 +12,10 @@ import {
 import PortalLayout from '../../components/layout/PortalLayout'
 import StatusPill from '../../components/common/StatusPill'
 import { useAuth } from '../../context/AuthContext'
-import { MOCK_LMO_QUEUE, daysUntil, formatDate } from '../../services/mockData'
+import { AsyncState } from '../../components/common/AsyncState'
+import { daysUntil, formatDate } from '../../services/format'
+import { applicationApi } from '../../services/api'
+import { useApi } from '../../hooks/useApi'
 
 /** Sidebar for the Legal Metrology Officer portal. */
 export const LMO_NAV = [
@@ -34,9 +37,12 @@ export const LMO_NAV = [
 export default function LMODashboard() {
   const { user } = useAuth()
 
-  const today = MOCK_LMO_QUEUE.filter((q) => daysUntil(q.scheduledOn) === 0)
-  const overdue = MOCK_LMO_QUEUE.filter((q) => daysUntil(q.scheduledOn) < 0)
-  const upcoming = MOCK_LMO_QUEUE.filter((q) => daysUntil(q.scheduledOn) > 0)
+  const { data, loading, error, refetch } = useApi(applicationApi.queue, [])
+  const queue = data ?? []
+
+  const today = queue.filter((q) => daysUntil(q.scheduledOn) === 0)
+  const overdue = queue.filter((q) => daysUntil(q.scheduledOn) < 0)
+  const upcoming = queue.filter((q) => daysUntil(q.scheduledOn) > 0)
 
   return (
     <PortalLayout
@@ -54,6 +60,7 @@ export default function LMODashboard() {
         </p>
       </div>
 
+      <AsyncState loading={loading} error={error} onRetry={refetch}>
       {overdue.length > 0 && (
         <div
           className="mb-5 flex gap-3 rounded border-l-4 border-red-600 bg-red-50 p-4"
@@ -134,7 +141,7 @@ export default function LMODashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {[...MOCK_LMO_QUEUE]
+              {[...queue]
                 .sort((a, b) => daysUntil(a.scheduledOn) - daysUntil(b.scheduledOn))
                 .map((q) => {
                   const left = daysUntil(q.scheduledOn)
@@ -206,6 +213,7 @@ export default function LMODashboard() {
         the field are held locally and synced when connectivity returns, so
         verification can proceed at premises without a network.
       </p>
+      </AsyncState>
     </PortalLayout>
   )
 }

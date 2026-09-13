@@ -4,10 +4,9 @@ import PortalLayout from '../../components/layout/PortalLayout'
 import { LMO_NAV } from './LMODashboard'
 import { useAuth } from '../../context/AuthContext'
 import { SelectField, TextAreaField, TextField } from '../../components/common/FormField'
-import {
-  MOCK_LMO_QUEUE,
-  formatDate,
-} from '../../services/mockData'
+import { formatDate } from '../../services/format'
+import { applicationApi, verificationApi } from '../../services/api'
+import { useApi } from '../../hooks/useApi'
 import {
   VERIFICATION_RESULT,
   VERIFICATION_RESULT_LABELS,
@@ -29,6 +28,13 @@ import {
 export default function RecordInspection() {
   const { user } = useAuth()
   const [saved, setSaved] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
+
+  // Only applications actually allotted to this officer are offered — the
+  // server enforces the same rule, so the list is a convenience, not a control.
+  const { data: queueData } = useApi(applicationApi.queue, [])
+  const queue = queueData ?? []
 
   const [form, setForm] = useState({
     applicationId: '',
@@ -61,16 +67,32 @@ export default function RecordInspection() {
     }
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    // Real implementation: POST /api/verifications with the officer's digital
-    // signature. The server must reject any attempt to record a result against
-    // an application not allotted to this officer.
-    setSaved(true)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    setSubmitting(true)
+    setSubmitError(null)
+    setSaved(false)
+    try {
+      // `applicationId` is the form's field name; the API calls it
+      // `applicationNo`. Blank strings are dropped so the server sees absent
+      // optional fields rather than empty ones.
+      const payload = { applicationNo: form.applicationId }
+      for (const [key, value] of Object.entries(form)) {
+        if (key === 'applicationId') continue
+        if (String(value).trim() !== '') payload[key] = value
+      }
+      await verificationApi.record(payload)
+      setSaved(true)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (err) {
+      setSubmitError(err.message)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const selected = MOCK_LMO_QUEUE.find((q) => q.id === form.applicationId)
+  const selected = queue.find((q) => q.id === form.applicationId)
   const isFail = form.result === VERIFICATION_RESULT.FAIL
   const isAdjusted = form.result === VERIFICATION_RESULT.PASS_WITH_ADJUSTMENT
 
@@ -108,6 +130,19 @@ export default function RecordInspection() {
         </div>
       )}
 
+      {submitError && (
+        <div
+          className="mb-5 flex gap-3 rounded border-l-4 border-red-600 bg-red-50 p-4"
+          role="alert"
+        >
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-700" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-bold text-red-900">The observation sheet was not recorded</p>
+            <p className="mt-0.5 text-xs text-red-800">{submitError}</p>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Application selection */}
         <section className="rounded border border-slate-200 bg-white p-5">
@@ -122,7 +157,7 @@ export default function RecordInspection() {
               onChange={set('applicationId')}
               required
               hint="Only applications allotted to you are listed"
-              options={MOCK_LMO_QUEUE.map((q) => ({
+              options={queue.map((q) => ({
                 value: q.id,
                 label: `${q.id} — ${q.applicant}`,
               }))}
@@ -429,12 +464,14 @@ export default function RecordInspection() {
         <div className="flex flex-wrap gap-3">
           <button
             type="submit"
+            disabled={submitting}
             className="inline-flex items-center gap-2 rounded bg-gov-blue px-5 py-2.5
                        text-sm font-semibold text-white hover:bg-blue-900
+                       disabled:cursor-not-allowed disabled:opacity-60
                        focus:outline-none focus:ring-2 focus:ring-gov-blue focus:ring-offset-2"
           >
             <Save size={16} aria-hidden="true" />
-            Sign and Submit Observation Sheet
+            {submitting ? 'Recording…' : 'Sign and Submit Observation Sheet'}
           </button>
           <button
             type="button"

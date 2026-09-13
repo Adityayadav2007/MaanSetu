@@ -3,13 +3,11 @@ import { PlusCircle, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import PortalLayout from '../../components/layout/PortalLayout'
 import StatusPill from '../../components/common/StatusPill'
+import { AsyncState } from '../../components/common/AsyncState'
 import { BUSINESS_NAV } from './BusinessDashboard'
-import {
-  MOCK_INSTRUMENTS,
-  daysUntil,
-  deriveCertificateStatus,
-  formatDate,
-} from '../../services/mockData'
+import { daysUntil, deriveCertificateStatus, formatDate } from '../../services/format'
+import { instrumentApi } from '../../services/api'
+import { useApi } from '../../hooks/useApi'
 import {
   INSTRUMENT_CATEGORIES,
   getCategoryName,
@@ -27,9 +25,12 @@ export default function MyInstruments() {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
 
+  const { data: instruments, loading, error, refetch } = useApi(instrumentApi.list, [])
+  const all = instruments ?? []
+
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return MOCK_INSTRUMENTS.filter((i) => {
+    return all.filter((i) => {
       const matchesCategory = !category || i.category === category
       const matchesQuery =
         !needle ||
@@ -39,7 +40,7 @@ export default function MyInstruments() {
           .includes(needle)
       return matchesCategory && matchesQuery
     })
-  }, [query, category])
+  }, [query, category, all])
 
   return (
     <PortalLayout
@@ -103,11 +104,18 @@ export default function MyInstruments() {
           </label>
         </div>
         <p className="mt-3 text-xs text-slate-500" role="status">
-          Showing {rows.length} of {MOCK_INSTRUMENTS.length} instruments
+          Showing {rows.length} of {all.length} instruments
         </p>
       </div>
 
       {/* Register table */}
+      <AsyncState
+        loading={loading}
+        error={error}
+        onRetry={refetch}
+        empty={all.length === 0}
+        emptyMessage="No instruments on your register yet. Register your first instrument to apply for verification."
+      >
       <div className="mt-4 overflow-x-auto rounded border border-slate-200 bg-white">
         <table className="w-full min-w-[52rem] text-sm">
           <caption className="sr-only">
@@ -180,6 +188,7 @@ export default function MyInstruments() {
           </tbody>
         </table>
       </div>
+      </AsyncState>
 
       <p className="mt-4 text-xs text-slate-500">
         Under Rule 6 of the Legal Metrology (General) Rules, 2011, an instrument

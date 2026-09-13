@@ -2,13 +2,11 @@ import { useMemo, useState } from 'react'
 import { Download, Printer, QrCode, Search, ShieldAlert } from 'lucide-react'
 import PortalLayout from '../../components/layout/PortalLayout'
 import StatusPill from '../../components/common/StatusPill'
+import { AsyncState } from '../../components/common/AsyncState'
 import { BUSINESS_NAV } from './BusinessDashboard'
-import {
-  MOCK_INSTRUMENTS,
-  daysUntil,
-  deriveCertificateStatus,
-  formatDate,
-} from '../../services/mockData'
+import { formatDate } from '../../services/format'
+import { certificateApi } from '../../services/api'
+import { useApi } from '../../hooks/useApi'
 import { CERTIFICATE_STATUS, getCategoryName } from '../../constants/legalMetrology'
 
 /**
@@ -23,15 +21,10 @@ export default function MyCertificates() {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
 
-  const certificates = useMemo(
-    () =>
-      MOCK_INSTRUMENTS.map((i) => ({
-        ...i,
-        status: deriveCertificateStatus(i),
-        daysLeft: daysUntil(i.validUpto),
-      })),
-    [],
-  )
+  // The API already derives `status` and `daysLeft` for each certificate, so
+  // the page renders them rather than recomputing — one source of truth.
+  const { data, loading, error, refetch } = useApi(certificateApi.list, [])
+  const certificates = data ?? []
 
   const filtered = certificates.filter((c) => {
     const matchesStatus = statusFilter === 'ALL' || c.status === statusFilter
@@ -93,6 +86,13 @@ export default function MyCertificates() {
         </label>
       </div>
 
+      <AsyncState
+        loading={loading}
+        error={error}
+        onRetry={refetch}
+        empty={certificates.length === 0}
+        emptyMessage="No certificates have been issued for your instruments yet."
+      >
       {filtered.length === 0 ? (
         <div className="rounded border border-slate-200 bg-white p-10 text-center">
           <QrCode size={32} className="mx-auto text-slate-300" aria-hidden="true" />
@@ -107,6 +107,7 @@ export default function MyCertificates() {
           ))}
         </div>
       )}
+      </AsyncState>
     </PortalLayout>
   )
 }
@@ -149,7 +150,7 @@ function CertificateCard({ cert }) {
             Verified on
           </dt>
           <dd className="text-sm font-medium text-slate-800">
-            {formatDate(cert.lastVerifiedOn)}
+            {formatDate(cert.verifiedOn)}
           </dd>
         </div>
         <div>

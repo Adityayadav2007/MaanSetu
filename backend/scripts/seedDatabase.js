@@ -1,6 +1,11 @@
 import pg from 'pg'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 import dotenv from 'dotenv'
+import { pathToFileURL } from 'node:url'
+// Certificate numbers are built with the same generator the API uses, so a
+// seeded certificate and a freshly issued one for the same district cannot
+// disagree on the district code.
+import { placeCode } from '../utils/references.js'
 
 dotenv.config()
 
@@ -19,7 +24,7 @@ const { Client } = pg
  *   - Admin: admin@legalmetrology.gov.in
  */
 
-async function seedDatabase() {
+export async function seedDatabase() {
   const client = new Client({
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
@@ -155,6 +160,14 @@ async function seedDatabase() {
     // Create sample instruments
     console.log('Creating sample instruments...')
     const today = new Date()
+
+    const SEED_STATE = 'Uttar Pradesh'
+    const SEED_DISTRICT = 'Kanpur Nagar'
+    const STATE_CODE = placeCode(SEED_STATE, 2)
+    const DISTRICT_CODE = placeCode(SEED_DISTRICT, 3)
+    /** Certificate number for a seeded instrument, generated the same way the API does. */
+    const certNoFor = (year, seq) =>
+      `LM/${STATE_CODE}/${DISTRICT_CODE}/${year}/${String(seq).padStart(6, '0')}`
     const instruments = [
       {
         id: 'INS-UP-2024-004417',
@@ -167,7 +180,7 @@ async function seedDatabase() {
         leastCount: '50 g',
         verifiedOn: new Date(today.getFullYear(), today.getMonth() - 10, 15),
         validUpto: new Date(today.getFullYear(), today.getMonth() + 2, 15),
-        certNo: 'LM/UP/KNR/2025/004417'
+        certNo: certNoFor(2025, 4417)
       },
       {
         id: 'INS-UP-2023-002285',
@@ -180,7 +193,7 @@ async function seedDatabase() {
         leastCount: '10 kg',
         verifiedOn: new Date(today.getFullYear(), today.getMonth() - 11, 20),
         validUpto: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 13),
-        certNo: 'LM/UP/KNR/2025/002285'
+        certNo: certNoFor(2025, 2285)
       },
       {
         id: 'INS-UP-2022-000913',
@@ -192,7 +205,7 @@ async function seedDatabase() {
         accuracyClass: 'III',
         verifiedOn: new Date(today.getFullYear() - 2, today.getMonth(), 1),
         validUpto: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 19),
-        certNo: 'LM/UP/KNR/2024/000913'
+        certNo: certNoFor(2024, 913)
       },
       {
         id: 'INS-UP-2025-006602',
@@ -203,7 +216,7 @@ async function seedDatabase() {
         capacity: '40 L/min',
         verifiedOn: new Date(today.getFullYear(), today.getMonth() - 4, 10),
         validUpto: new Date(today.getFullYear(), today.getMonth() + 8, 10),
-        certNo: 'LM/UP/KNR/2026/006602'
+        certNo: certNoFor(2026, 6602)
       }
     ]
 
@@ -258,7 +271,7 @@ async function seedDatabase() {
         inst.validUpto,
         'PASS',
         `UP-KNR-${inst.certNo.split('/').pop()}`,
-        `https://maansetu.gov.in/verify/${inst.certNo}`
+        `${process.env.PUBLIC_VERIFY_BASE_URL || 'http://localhost:3000/verify'}/${inst.certNo}`
       ])
     }
 
@@ -329,12 +342,191 @@ async function seedDatabase() {
       'Nameplate photograph is illegible. Please re-upload a clear image showing the serial number.'
     ])
 
+    /* ---------------------------------------------------------------- *
+     * Other traders in the same jurisdiction.
+     *
+     * Without these the LMO and GATC queues would show only Ramesh Traders'
+     * own applications, and the district pendency table would have a single
+     * row — the dashboards would not demonstrate anything.
+     * ---------------------------------------------------------------- */
+    console.log('Creating additional businesses and applications...')
+
+    const otherTraders = [
+      {
+        email: 'sharma.fuel@demo.in', businessName: 'Sharma Fuel Station',
+        tradeCategory: 'Petrol / Fuel Retail Outlet', pan: 'FGHIJ5678K',
+        contact: 'Anil Sharma', address: 'GT Road, Kanpur Nagar',
+        registrationNo: 'BUS-2026-000201',
+        instrument: {
+          instrumentId: 'INS-UP-2025-007101', category: 'FUEL_DISPENSER',
+          make: 'Tokheim', model: 'Quantium 510', serialNo: 'TKQ510-7101',
+          capacity: '50 L/min', accuracyClass: null, leastCount: '5 mL',
+        },
+        application: {
+          applicationNo: 'APP/UP/2026/0091388', type: 'RE_VERIFICATION',
+          status: 'SCHEDULED', daysAgo: 5, scheduledIn: 1,
+          allottedTo: 'LMO', fee: 1200, receipt: 'RCPT/UP/2026/775001',
+        },
+      },
+      {
+        email: 'krishna.kirana@demo.in', businessName: 'Krishna Kirana Store',
+        tradeCategory: 'Retail Trade', pan: 'KLMNO9012P',
+        contact: 'Krishna Agarwal', address: 'Govind Nagar, Kanpur Nagar',
+        registrationNo: 'BUS-2026-000215',
+        instrument: {
+          instrumentId: 'INS-UP-2024-005820', category: 'NAWI',
+          make: 'Essae', model: 'DS-415', serialNo: 'ESS415-5820',
+          capacity: '30 kg', accuracyClass: 'III', leastCount: '5 g',
+        },
+        application: {
+          applicationNo: 'APP/UP/2026/0091355', type: 'RE_VERIFICATION',
+          status: 'ALLOTTED', daysAgo: 7, scheduledIn: 0,
+          allottedTo: 'LMO', fee: 300, receipt: 'RCPT/UP/2026/775120',
+        },
+      },
+      {
+        email: 'agarwal.mandi@demo.in', businessName: 'Agarwal Grain Mandi',
+        tradeCategory: 'Grain and Agricultural Market', pan: 'PQRST3456Q',
+        contact: 'Suresh Agarwal', address: 'Anaj Mandi, Kanpur Nagar',
+        registrationNo: 'BUS-2026-000233',
+        instrument: {
+          instrumentId: 'INS-UP-2023-003390', category: 'WEIGHTS',
+          make: 'Standard Metrology Works', model: 'CI-SET-50', serialNo: 'SMW-CI-50-3390',
+          capacity: '50 kg set', accuracyClass: 'III', leastCount: null,
+        },
+        application: {
+          applicationNo: 'APP/UP/2026/0091201', type: 'RE_VERIFICATION',
+          status: 'ALLOTTED', daysAgo: 20, scheduledIn: -1,
+          allottedTo: 'LMO', fee: 400, receipt: 'RCPT/UP/2026/774880',
+        },
+      },
+      {
+        email: 'bharat.provision@demo.in', businessName: 'Bharat Provision Store',
+        tradeCategory: 'Retail Trade', pan: 'UVWXY7890R',
+        contact: 'Mohan Lal', address: 'Bara Bazar, Lucknow',
+        registrationNo: 'BUS-2026-000244',
+        instrument: {
+          instrumentId: 'INS-UP-2025-008012', category: 'NAWI',
+          make: 'Contech', model: 'CAS-10', serialNo: 'CTC10-8012',
+          capacity: '10 kg', accuracyClass: 'III', leastCount: '1 g',
+        },
+        application: {
+          applicationNo: 'APP/UP/2026/0091620', type: 'VERIFICATION',
+          status: 'SCHEDULED', daysAgo: 3, scheduledIn: 2,
+          allottedTo: 'GATC', fee: 350, receipt: 'RCPT/UP/2026/776800',
+        },
+      },
+      {
+        email: 'shubham.jewellers@demo.in', businessName: 'Shubham Jewellers',
+        tradeCategory: 'Jewellery and Precious Metals', pan: 'ZABCD2468S',
+        contact: 'Rakesh Soni', address: 'Hazratganj, Lucknow',
+        registrationNo: 'BUS-2026-000251',
+        instrument: {
+          instrumentId: 'INS-UP-2025-008144', category: 'WEIGHTS',
+          make: 'Sartorius', model: 'PREC-200', serialNo: 'SRT-P200-8144',
+          capacity: '1 mg – 200 g', accuracyClass: 'I', leastCount: '1 mg',
+        },
+        application: {
+          applicationNo: 'APP/UP/2026/0091598', type: 'VERIFICATION',
+          status: 'ALLOTTED', daysAgo: 2, scheduledIn: null,
+          allottedTo: 'GATC', fee: 800, receipt: 'RCPT/UP/2026/776750',
+        },
+      },
+    ]
+
+    const officerRowId = { LMO: lmoId, GATC: gatcId }
+
+    for (const t of otherTraders) {
+      const hash = await bcrypt.hash('demo1234', 12)
+      const { rows: uRows } = await client.query(
+        'INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id',
+        [t.email, hash, 'BUSINESS'],
+      )
+
+      const { rows: bRows } = await client.query(
+        `INSERT INTO businesses (
+           user_id, registration_no, business_name, business_type, trade_category,
+           pan_no, contact_person, designation, mobile, email,
+           premises_address, state, district, pincode
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         RETURNING id`,
+        [
+          uRows[0].id, t.registrationNo, t.businessName, 'PROPRIETORSHIP',
+          t.tradeCategory, t.pan, t.contact, 'Proprietor', '9800000000', t.email,
+          t.address, 'Uttar Pradesh',
+          t.address.includes('Lucknow') ? 'Lucknow' : 'Kanpur Nagar',
+          t.address.includes('Lucknow') ? '226001' : '208001',
+        ],
+      )
+      const bizId = bRows[0].id
+
+      const { rows: iRows } = await client.query(
+        `INSERT INTO instruments (
+           instrument_id, business_id, category, make, model, serial_no,
+           capacity, accuracy_class, least_count, premises_address,
+           premises_state, premises_district
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         RETURNING id`,
+        [
+          t.instrument.instrumentId, bizId, t.instrument.category, t.instrument.make,
+          t.instrument.model, t.instrument.serialNo, t.instrument.capacity,
+          t.instrument.accuracyClass, t.instrument.leastCount, t.address,
+          'Uttar Pradesh', t.address.includes('Lucknow') ? 'Lucknow' : 'Kanpur Nagar',
+        ],
+      )
+
+      const app = t.application
+      await client.query(
+        `INSERT INTO applications (
+           application_no, instrument_id, business_id, type, status,
+           submitted_on, scheduled_on, allotted_to, fee_paid, fee_receipt
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [
+          app.applicationNo, iRows[0].id, bizId, app.type, app.status,
+          new Date(today.getFullYear(), today.getMonth(), today.getDate() - app.daysAgo),
+          app.scheduledIn == null
+            ? null
+            : new Date(today.getFullYear(), today.getMonth(), today.getDate() + app.scheduledIn),
+          officerRowId[app.allottedTo], app.fee, app.receipt,
+        ],
+      )
+    }
+
+    // Enforcement history, so the admin dashboard's enforcement panel is real.
+    console.log('Creating enforcement actions...')
+    const enforcement = [
+      ['ENF/UP/2026/00812', 3, 'Ghaziabad', 'Metro Wholesale Depot',
+        'Use of unverified weighing instrument (Sec. 24)', 'Compounding notice issued',
+        25000, 'LMO/UP/0298'],
+      ['ENF/UP/2026/00809', 5, 'Kanpur Nagar', 'Verma Fuel Point',
+        'Tampered seal on dispensing pump (Sec. 28)', 'Instrument seized, prosecution initiated',
+        50000, 'LMO/UP/0417'],
+      ['ENF/UP/2026/00801', 8, 'Lucknow', 'City Grain Traders',
+        'Expired verification certificate (Rule 6)', 'Warning + re-verification directed',
+        10000, 'LMO/UP/0155'],
+    ]
+    for (const [no, daysAgo, district, premises, violation, action, penalty, officer] of enforcement) {
+      await client.query(
+        `INSERT INTO enforcement_actions
+           (action_no, action_date, state, district, premises, violation, action_taken, penalty, officer_code, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [
+          no,
+          new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo),
+          'Uttar Pradesh', district, premises, violation, action, penalty, officer, adminUserId,
+        ],
+      )
+    }
+
     console.log('✅ Database seeded successfully!')
     console.log('\n📋 Demo Credentials (password for all: demo1234):')
-    console.log('  Business: business@demo.in')
-    console.log('  LMO: lmo@demo.in')
-    console.log('  GATC: gatc@demo.in')
-    console.log('  Admin: admin@legalmetrology.gov.in')
+    console.log('  Business logs in with its EMAIL:')
+    console.log('    business@demo.in            Ramesh Traders')
+    console.log('    sharma.fuel@demo.in         Sharma Fuel Station')
+    console.log('  Officers, GATCs and admins log in with their SERVICE IDENTIFIER:')
+    console.log('    LMO/UP/0417                 Sunita Verma, Legal Metrology Officer')
+    console.log('    GATC/UP/031                 Ganga Test Laboratory')
+    console.log('    ADM-UP-001                  Controller of Legal Metrology')
     console.log('\n🚀 Start the backend: npm run dev')
 
   } catch (error) {
@@ -345,4 +537,6 @@ async function seedDatabase() {
   }
 }
 
-seedDatabase()
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  seedDatabase().catch(() => process.exit(1))
+}
