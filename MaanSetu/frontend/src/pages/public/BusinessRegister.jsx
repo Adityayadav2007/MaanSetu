@@ -4,6 +4,7 @@ import { CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react'
 import PublicLayout from '../../components/layout/PublicLayout'
 import { TextField, SelectField, TextAreaField, FormSection } from '../../components/common/FormField'
 import Captcha from '../../components/common/Captcha'
+import { authApi } from '../../services/api'
 import {
   BUSINESS_TYPES,
   STATES,
@@ -43,6 +44,7 @@ export default function BusinessRegister() {
   const [captcha, setCaptcha] = useState({ answer: '', expected: '' })
   const [consent, setConsent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
   const [done, setDone] = useState(null)
 
   function update(e) {
@@ -112,14 +114,16 @@ export default function BusinessRegister() {
     }
 
     setSubmitting(true)
+    setSubmitError(null)
     try {
-      // Placeholder for POST /api/auth/register/business.
-      await new Promise((r) => setTimeout(r, 900))
-      setDone({
-        registrationNo: `BUS-${new Date().getFullYear()}-${String(
-          Math.floor(Math.random() * 900000) + 100000,
-        )}`,
+      const result = await authApi.registerBusiness({
+        ...form,
+        gstin: form.gstin.trim() || undefined,
       })
+      setDone({ registrationNo: result.registrationNo })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (err) {
+      setSubmitError(err.message)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setSubmitting(false)
@@ -232,6 +236,19 @@ export default function BusinessRegister() {
               <AlertTriangle size={16} aria-hidden="true" />
               Please correct the highlighted fields before submitting.
             </p>
+          </div>
+        )}
+
+        {submitError && (
+          <div
+            role="alert"
+            className="mt-4 rounded border-l-4 border-red-500 bg-red-50 p-4"
+          >
+            <p className="flex items-center gap-2 text-sm font-semibold text-red-800">
+              <AlertTriangle size={16} aria-hidden="true" />
+              Registration could not be completed
+            </p>
+            <p className="mt-1 text-sm text-red-700">{submitError}</p>
           </div>
         )}
 

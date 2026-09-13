@@ -5,11 +5,11 @@ import {
 } from 'lucide-react'
 import PortalLayout from '../../components/layout/PortalLayout'
 import StatusPill from '../../components/common/StatusPill'
+import { AsyncState } from '../../components/common/AsyncState'
 import { useAuth } from '../../context/AuthContext'
-import {
-  MOCK_APPLICATIONS, MOCK_INSTRUMENTS, daysUntil, formatDate,
-  deriveCertificateStatus,
-} from '../../services/mockData'
+import { daysUntil, formatDate, deriveCertificateStatus } from '../../services/format'
+import { instrumentApi, applicationApi } from '../../services/api'
+import { useApi } from '../../hooks/useApi'
 import {
   APPLICATION_STATUS, APPLICATION_TYPE_LABELS, getCategoryName,
 } from '../../constants/legalMetrology'
@@ -50,15 +50,24 @@ function StatCard({ label, value, tone = 'default', icon: Icon, to }) {
 export default function BusinessDashboard() {
   const { user } = useAuth()
 
-  const expiringSoon = MOCK_INSTRUMENTS.filter((i) => {
+  const { data, loading, error, refetch } = useApi(
+    () => Promise.all([instrumentApi.list(), applicationApi.list()])
+      .then(([instruments, applications]) => ({ instruments, applications })),
+    [],
+  )
+
+  const instruments = data?.instruments ?? []
+  const applications = data?.applications ?? []
+
+  const expiringSoon = instruments.filter((i) => {
     const d = daysUntil(i.validUpto)
-    return d >= 0 && d <= 60
+    return d != null && d >= 0 && d <= 60
   })
-  const expired = MOCK_INSTRUMENTS.filter((i) => daysUntil(i.validUpto) < 0)
-  const pending = MOCK_APPLICATIONS.filter(
+  const expired = instruments.filter((i) => daysUntil(i.validUpto) < 0)
+  const pending = applications.filter(
     (a) => ![APPLICATION_STATUS.CERTIFIED, APPLICATION_STATUS.REJECTED].includes(a.status),
   )
-  const actionNeeded = MOCK_APPLICATIONS.filter(
+  const actionNeeded = applications.filter(
     (a) => a.status === APPLICATION_STATUS.QUERY_RAISED,
   )
 
@@ -78,6 +87,7 @@ export default function BusinessDashboard() {
         </p>
       </div>
 
+      <AsyncState loading={loading} error={error} onRetry={refetch}>
       {/* Action-required banner takes priority over the stat grid. */}
       {(actionNeeded.length > 0 || expired.length > 0) && (
         <div className="mb-6 space-y-3">
@@ -128,7 +138,7 @@ export default function BusinessDashboard() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Registered Instruments"
-          value={MOCK_INSTRUMENTS.length}
+          value={instruments.length}
           icon={Scale}
           to="/business/instruments"
         />
@@ -209,7 +219,7 @@ export default function BusinessDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {MOCK_APPLICATIONS.map((a) => (
+              {applications.map((a) => (
                 <tr key={a.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-mono text-xs text-gov-blue">{a.id}</td>
                   <td className="px-5 py-3 text-slate-800">{a.instrumentLabel}</td>
@@ -241,7 +251,7 @@ export default function BusinessDashboard() {
           </p>
         </div>
         <ul className="divide-y divide-slate-100">
-          {[...MOCK_INSTRUMENTS]
+          {[...instruments]
             .sort((a, b) => daysUntil(a.validUpto) - daysUntil(b.validUpto))
             .map((inst) => {
               const left = daysUntil(inst.validUpto)
@@ -284,6 +294,7 @@ export default function BusinessDashboard() {
         Certificates are issued digitally with a QR code. Any person may verify a
         certificate at the public verification page without signing in.
       </p>
+      </AsyncState>
     </PortalLayout>
   )
 }

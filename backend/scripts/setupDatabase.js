@@ -1,5 +1,6 @@
 import pg from 'pg'
 import dotenv from 'dotenv'
+import { pathToFileURL } from 'node:url'
 
 dotenv.config()
 
@@ -16,7 +17,7 @@ const { Client } = pg
  * database with live data.
  */
 
-async function setupDatabase() {
+export async function setupDatabase() {
   const client = new Client({
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
@@ -32,6 +33,7 @@ async function setupDatabase() {
     // Drop existing tables (cascade removes dependent objects)
     console.log('Dropping existing tables...')
     await client.query(`
+      DROP TABLE IF EXISTS enforcement_actions CASCADE;
       DROP TABLE IF EXISTS audit_log CASCADE;
       DROP TABLE IF EXISTS certificates CASCADE;
       DROP TABLE IF EXISTS verifications CASCADE;
@@ -166,6 +168,10 @@ async function setupDatabase() {
         premises_district VARCHAR(100) NOT NULL,
         premises_pincode VARCHAR(6),
         usage_type VARCHAR(50),
+        -- The holder's own note about the instrument. Free text, never used in
+        -- a statutory calculation, but dropping a field the form collects would
+        -- silently lose user input.
+        remarks TEXT,
         last_verified_on DATE,
         valid_upto DATE,
         certificate_no VARCHAR(100),
@@ -280,7 +286,10 @@ async function setupDatabase() {
         user_id INTEGER REFERENCES users(id),
         action VARCHAR(100) NOT NULL,
         entity_type VARCHAR(50) NOT NULL,
-        entity_id INTEGER,
+        -- VARCHAR, not INTEGER: an audit entry may reference either a numeric
+        -- row id or a public reference number ('LM/UP/KNR/2025/004417'). Forcing
+        -- INTEGER makes the insert fail on the reference-number case.
+        entity_id VARCHAR(64),
         details JSONB,
         ip_address VARCHAR(45),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -288,6 +297,32 @@ async function setupDatabase() {
       CREATE INDEX idx_audit_log_user ON audit_log(user_id);
       CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
       CREATE INDEX idx_audit_log_created_at ON audit_log(created_at DESC);
+    `)
+
+    // Enforcement actions table
+    console.log('Creating enforcement_actions table...')
+    await client.query(`
+      CREATE TABLE enforcement_actions (
+        id SERIAL PRIMARY KEY,
+        action_no VARCHAR(50) UNIQUE NOT NULL,
+        action_date DATE NOT NULL DEFAULT CURRENT_DATE,
+        -- Stored explicitly rather than derived from the instruments table: an
+        -- enforcement action often concerns premises whose instruments were
+        -- never registered, so there would be nothing to join against.
+        state VARCHAR(100) NOT NULL,
+        district VARCHAR(100) NOT NULL,
+        premises TEXT NOT NULL,
+        violation TEXT NOT NULL,
+        action_taken TEXT NOT NULL,
+        penalty DECIMAL(10, 2),
+        officer_code VARCHAR(50),
+        instrument_id INTEGER REFERENCES instruments(id) ON DELETE SET NULL,
+        certificate_id INTEGER REFERENCES certificates(id) ON DELETE SET NULL,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX idx_enforcement_date ON enforcement_actions(action_date DESC);
+      CREATE INDEX idx_enforcement_district ON enforcement_actions(district);
     `)
 
     console.log('✅ Database schema created successfully!')
@@ -303,4 +338,11 @@ async function setupDatabase() {
   }
 }
 
-setupDatabase()
+/**
+ * Run only when executed directly (`node scripts/setupDatabase.js`), so the
+ * test suite can import `setupDatabase` and build the exact production schema
+ * against a throwaway database instead of maintaining a second copy of it.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  setupDatabase().catch(() => process.exit(1))
+}

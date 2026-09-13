@@ -5,9 +5,17 @@ import {
 } from 'lucide-react'
 import PortalLayout from '../../components/layout/PortalLayout'
 import { useAuth } from '../../context/AuthContext'
-import {
-  MOCK_ADMIN_STATS, MOCK_DISTRICT_PENDENCY, MOCK_ENFORCEMENT, formatDate,
-} from '../../services/mockData'
+import { AsyncState } from '../../components/common/AsyncState'
+import { formatDate } from '../../services/format'
+import { adminApi } from '../../services/api'
+import { useApi } from '../../hooks/useApi'
+
+/** Shape returned before the API answers, so the render never divides by undefined. */
+const EMPTY_STATS = {
+  totalInstruments: 0, activeCertificates: 0, expiringIn30Days: 0, expired: 0,
+  pendingApplications: 0, overdueVerifications: 0, registeredBusinesses: 0,
+  activeLMOs: 0, notifiedGATCs: 0, certificatesIssuedThisMonth: 0,
+}
 
 export const ADMIN_NAV = [
   { to: '/officer/admin/dashboard', label: 'Overview', icon: Home, end: true },
@@ -28,13 +36,24 @@ export const ADMIN_NAV = [
  */
 export default function AdminDashboard() {
   const { user } = useAuth()
-  const s = MOCK_ADMIN_STATS
   const [sortBy, setSortBy] = useState('pending')
 
-  const compliancePct = ((s.activeCertificates / s.totalInstruments) * 100).toFixed(1)
+  const { data, loading, error, refetch } = useApi(
+    () => Promise.all([adminApi.stats(), adminApi.pendency(), adminApi.enforcement()])
+      .then(([overview, districts, enforcement]) => ({ overview, districts, enforcement })),
+    [],
+  )
 
-  const districts = [...MOCK_DISTRICT_PENDENCY].sort((a, b) => b[sortBy] - a[sortBy])
-  const maxPending = Math.max(...districts.map((d) => d.pending))
+  const s = data?.overview?.stats ?? EMPTY_STATS
+  const enforcement = data?.enforcement ?? []
+
+  // Guard the divide: an empty register would otherwise render "NaN%".
+  const compliancePct = s.totalInstruments
+    ? ((s.activeCertificates / s.totalInstruments) * 100).toFixed(1)
+    : '0.0'
+
+  const districts = [...(data?.districts ?? [])].sort((a, b) => b[sortBy] - a[sortBy])
+  const maxPending = districts.length ? Math.max(...districts.map((d) => d.pending)) : 0
 
   return (
     <PortalLayout
@@ -50,6 +69,7 @@ export default function AdminDashboard() {
         </p>
       </div>
 
+      <AsyncState loading={loading} error={error} onRetry={refetch}>
       {/* Headline compliance position */}
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <BigStat
@@ -187,7 +207,7 @@ export default function AdminDashboard() {
         </div>
 
         <ul className="divide-y divide-slate-100">
-          {MOCK_ENFORCEMENT.map((e) => (
+          {enforcement.map((e) => (
             <li key={e.id} className="px-4 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -216,6 +236,7 @@ export default function AdminDashboard() {
         will be computed from the certificate registry, and every figure will be
         traceable to the underlying records through the Audit Trail.
       </p>
+      </AsyncState>
     </PortalLayout>
   )
 }

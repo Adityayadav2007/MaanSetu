@@ -92,11 +92,18 @@ A government-level platform for online verification and digital certification of
 - [x] Role-based sidebar navigation
 - [x] 404 handler and "coming soon" placeholders for unimplemented sections
 
-**Task 5 — Domain layer and mock data**
+**Task 5 — Domain layer**
 - [x] Legal Metrology constants: instrument categories, accuracy classes, application statuses, verification results, validity periods (all sourced from the 2011 Rules)
-- [x] Mock authentication service with 4 demo accounts (business, LMO, GATC, admin)
-- [x] Mock data: instruments, applications, certificates, officer queues, admin statistics
-- [x] Certificate lookup function (accepts QR URL or bare certificate number)
+- [x] `services/api.js` — typed endpoint client for every backend route
+- [x] `hooks/useApi.js` — loading / error / refetch shared by every data page
+- [x] `components/common/AsyncState.jsx` — consistent loading, error and empty states
+
+**Task 6 — Backend (see `backend/README.md`)**
+- [x] Express API: auth, instruments, applications, verifications, certificates, admin
+- [x] PostgreSQL schema, seed data, and an embedded dev database
+- [x] JWT session in an httpOnly cookie; bcrypt password hashing
+- [x] QR code generation per certificate
+- [x] Integration tests against a real PostgreSQL, plus a static wiring check
 
 ---
 
@@ -110,13 +117,14 @@ C:\MaanSetu\
 │   │   │   ├── common/       # GovHeader, GovFooter, StatusPill, FormField, Captcha, ProtectedRoute
 │   │   │   └── layout/       # PublicLayout, PortalLayout (role-agnostic sidebar shell)
 │   │   ├── constants/        # legalMetrology.js (domain constants from the Act & Rules)
-│   │   ├── context/          # AuthContext (session state; currently mock, will wrap backend JWT)
+│   │   ├── context/          # AuthContext (session from the httpOnly cookie via GET /api/auth/me)
 │   │   ├── pages/
 │   │   │   ├── public/       # LandingPage, BusinessLogin, BusinessRegister, ScanQR, VerifyCertificate, HelpPage
 │   │   │   ├── business/     # BusinessDashboard, MyInstruments, InstrumentRegister, MyApplications, MyCertificates
 │   │   │   ├── officer/      # LMODashboard, RecordInspection, GATCDashboard, AdminDashboard, OfficerLogin
 │   │   │   └── common/       # ComingSoon (placeholder), NotFound (404)
-│   │   ├── services/         # mockAuth.js, mockData.js (replaced by api.js when backend exists)
+│   │   ├── hooks/            # useApi (loading / error / refetch for every data page)
+│   │   ├── services/         # api.js (axios client), format.js (date + status helpers)
 │   │   ├── App.jsx           # Root router
 │   │   ├── main.jsx          # React entry point
 │   │   └── index.css         # Tailwind directives + global styles
@@ -154,7 +162,7 @@ The dev server starts at `http://localhost:3000`.
 
 ### Demo Credentials
 
-The frontend authenticates against a mock service with four demo accounts. Passwords for all roles: `demo1234`
+Accounts are seeded into PostgreSQL by `backend`'s `npm run db:seed`. Password for all of them: `demo1234`.
 
 #### Business / Instrument User Portal
 - **ID**: `business@demo.in`
@@ -197,14 +205,16 @@ Any consumer must be able to confirm that an instrument is lawfully verified, wh
 ### 2. Client-side role guards are UX only
 `ProtectedRoute` prevents rendering a screen for the wrong role, but anyone can bypass it by editing client state. Every API endpoint must independently re-check the user's role. The guard is a usability affordance, not a security control.
 
-### 3. Mock data mirrors the expected API shape
-`mockData.js` and `mockAuth.js` stand in for the backend. Their exports match what `services/api.js` will provide once the server exists, so swapping the source out should not require touching the pages.
+### 3. One API client, one place that encodes reference numbers
+`services/api.js` is the only module that talks to the backend. It sets `withCredentials: true` (the session is an httpOnly cookie, so the browser must send it) and `encodeURIComponent`s every reference number used as a path segment.
+
+That second point is easy to get wrong: application and certificate numbers contain forward slashes (`LM/UP/KNX/2026/006603`). Used raw in a URL they become extra path segments and match no route, so the request 404s. Pages pass plain strings; the client encodes.
 
 ### 4. Validity periods are State-specific
 Rule 6 of the Legal Metrology (General) Rules, 2011 lets each State notify its own re-verification periodicity. The `defaultValidityMonths` values in `legalMetrology.js` are indicative — the backend must store per-State overrides and the frontend must display the period from the actual certificate, not the constant.
 
-### 5. No localStorage for tokens
-The `AuthContext` currently holds the session in React state and caches a non-sensitive profile hint in `sessionStorage`. When the real backend is wired in, the access token must be an httpOnly, Secure, SameSite=Strict cookie. Never store tokens in `localStorage` or `sessionStorage` — both are readable by any injected script (XSS).
+### 5. No token in JavaScript at all
+The session lives in an httpOnly cookie set by the server. `AuthContext` never sees the token and stores nothing in `localStorage` or `sessionStorage` — both are readable by any injected script (XSS), so a token kept there is a token an attacker can steal and replay. On reload the profile is re-fetched from `GET /api/auth/me`, which the browser can answer because it still holds the cookie.
 
 ### 6. Document upload is client-validated, server-verified
 File type and size checks in the instrument registration form are convenience only. The server must independently validate MIME type, magic bytes, and scan for malware before storing anything.
@@ -214,21 +224,28 @@ Each QR encodes `https://maansetu.gov.in/verify/<certificateNo>`, not the certif
 
 ---
 
-## Next Steps (Backend Integration)
+## Backend
 
-### Task 2 — Backend
-1. Scaffold Express API with `/api/auth/*`, `/api/instruments/*`, `/api/applications/*`, `/api/certificates/*`
-2. Implement JWT-based auth with httpOnly cookies; password hashing with bcrypt
-3. File upload endpoints with Multer (model approval certs, instrument photos); validate MIME and magic bytes
-4. QR code generation (each certificate gets a unique `https://maansetu.gov.in/verify/<certNo>`)
-5. Replace `mockAuth.js` and `mockData.js` with `api.js` that calls the real endpoints
+The backend lives in `backend/` at the repository root — see `backend/README.md`.
 
-### Task 3 — Database
-1. PostgreSQL schema: `users`, `businesses`, `instruments`, `applications`, `verifications`, `certificates`, `officers`, `gatcs`, `audit_log`
-2. Migrations with Knex or Sequelize
-3. Foreign keys: `instruments.business_id → businesses.id`, `certificates.instrument_id → instruments.id`
-4. Check constraints: accuracy class in {I, II, III, IIII}, application status in the enum from `legalMetrology.js`
-5. Indexes: certificate number (unique), instrument serial number, GSTIN, application status
+Run it alongside this frontend:
+
+```bash
+cd backend
+cp .env.example .env        # set a real JWT_SECRET
+npm install
+npm run dev:db              # terminal 1 — embedded PostgreSQL, if you have none installed
+npm run db:setup && npm run db:seed
+npm run dev                 # API on :5000
+
+cd ../MaanSetu/frontend
+npm install
+npm run dev                 # portal on :3000, proxying /api to :5000
+```
+
+Demo password for every seeded account is `demo1234`. Businesses sign in with
+their email; officers, GATCs and administrators sign in with their service
+identifier (`LMO/UP/0417`, `GATC/UP/031`, `ADM-UP-001`).
 
 ### Task 4 — API Documentation
 1. OpenAPI 3.0 spec describing every endpoint, request/response shape, and error code
@@ -268,7 +285,7 @@ This build is structured to align with:
 
 ## Known Limitations (Current Build)
 
-1. **No backend**: all data is mock; nothing persists across sessions
+1. **No payment gateway**: verification fees are recorded but not collected
 2. **No actual payment gateway**: fee payment buttons are placeholders
 3. **No SMS/email alerts**: the reminder system is UI-only
 4. **No digital signature integration**: officer observation sheets would be DSC-signed in production
@@ -307,7 +324,8 @@ This is a demonstrable frontend build for evaluation. For backend integration, d
 **Technical documentation**:
 - Frontend source: `C:\MaanSetu\frontend\src\`
 - Domain constants: `frontend\src\constants\legalMetrology.js` (statutory source references in comments)
-- Mock data: `frontend\src\services\mockData.js` (shapes match expected API)
+- API client: `frontend/src/services/api.js` (relative URLs, credentials, reference-number encoding)
+- Backend: `backend/README.md` (routes, conventions, tests)
 
 **Architecture notes**:
 - The `ProtectedRoute` component is UX only — server-side auth must independently verify every request

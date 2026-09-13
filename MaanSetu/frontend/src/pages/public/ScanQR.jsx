@@ -79,7 +79,7 @@ export default function ScanQR() {
     // QR payloads are URLs like https://maansetu.gov.in/verify/<certNo>.
     // Extract the certificate number rather than navigating to the raw string,
     // so a malicious QR code cannot redirect the user off-site.
-    const match = String(text).match(/\/verify\/([^/?#\s]+)/i)
+    const match = String(text).match(/\/verify\/(.+)$/i)
     const certNo = match ? match[1] : String(text).trim()
     navigate(`/verify/${encodeURIComponent(certNo)}`)
   }
@@ -183,7 +183,7 @@ export default function ScanQR() {
               type="text"
               value={manual}
               onChange={(e) => setManual(e.target.value)}
-              placeholder="e.g. LM/UP/KNR/2025/004417"
+              placeholder="e.g. LM/UP/KNX/2025/004417"
               autoComplete="off"
               className="flex-1 rounded border border-slate-300 px-3 py-2.5 text-sm
                          focus:border-gov-blue focus:outline-none focus:ring-1 focus:ring-gov-blue"

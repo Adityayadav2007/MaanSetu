@@ -4,7 +4,10 @@ import {
 } from 'lucide-react'
 import PortalLayout from '../../components/layout/PortalLayout'
 import { useAuth } from '../../context/AuthContext'
-import { MOCK_GATC_QUEUE, formatDate } from '../../services/mockData'
+import { AsyncState } from '../../components/common/AsyncState'
+import { formatDate } from '../../services/format'
+import { applicationApi } from '../../services/api'
+import { useApi } from '../../hooks/useApi'
 
 export const GATC_NAV = [
   { to: '/officer/gatc/dashboard', label: 'Dashboard', icon: Home, end: true },
@@ -33,17 +36,23 @@ export default function GATCDashboard() {
   const { user } = useAuth()
   const [filter, setFilter] = useState('All')
 
+  // The server returns the GATC-shaped queue (testStatus, receivedOn,
+  // assignedTechnician) because it can tell from the officer type what it is
+  // serving. The page does not have to guess.
+  const { data, loading, error, refetch } = useApi(applicationApi.queue, [])
+  const queue = data ?? []
+
   const counts = {
-    awaiting: MOCK_GATC_QUEUE.filter((q) => q.testStatus === 'Awaiting Test').length,
-    inProgress: MOCK_GATC_QUEUE.filter((q) => q.testStatus === 'In Progress').length,
-    completed: MOCK_GATC_QUEUE.filter((q) => q.testStatus === 'Completed').length,
-    unassigned: MOCK_GATC_QUEUE.filter((q) => !q.assignedTechnician).length,
+    awaiting: queue.filter((q) => q.testStatus === 'Awaiting Test').length,
+    inProgress: queue.filter((q) => q.testStatus === 'In Progress').length,
+    completed: queue.filter((q) => q.testStatus === 'Completed').length,
+    unassigned: queue.filter((q) => !q.assignedTechnician).length,
   }
 
   const rows =
     filter === 'All'
-      ? MOCK_GATC_QUEUE
-      : MOCK_GATC_QUEUE.filter((q) => q.testStatus === filter)
+      ? queue
+      : queue.filter((q) => q.testStatus === filter)
 
   return (
     <PortalLayout
@@ -81,6 +90,13 @@ export default function GATCDashboard() {
         </div>
       </section>
 
+      <AsyncState
+        loading={loading}
+        error={error}
+        onRetry={refetch}
+        empty={queue.length === 0}
+        emptyMessage="No instruments are currently allotted to this test centre."
+      >
       {/* Stats */}
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Awaiting Test" value={counts.awaiting} icon={Inbox} tone="amber" />
@@ -229,6 +245,7 @@ export default function GATCDashboard() {
           </table>
         </div>
       </section>
+      </AsyncState>
     </PortalLayout>
   )
 }

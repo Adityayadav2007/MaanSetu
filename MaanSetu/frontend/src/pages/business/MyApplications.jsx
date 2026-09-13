@@ -2,8 +2,11 @@ import { useMemo, useState } from 'react'
 import { AlertCircle, FileText, Search } from 'lucide-react'
 import PortalLayout from '../../components/layout/PortalLayout'
 import StatusPill from '../../components/common/StatusPill'
+import { AsyncState } from '../../components/common/AsyncState'
 import { BUSINESS_NAV } from './BusinessDashboard'
-import { MOCK_APPLICATIONS, formatDate } from '../../services/mockData'
+import { formatDate } from '../../services/format'
+import { applicationApi } from '../../services/api'
+import { useApi } from '../../hooks/useApi'
 import {
   APPLICATION_STATUS,
   APPLICATION_STATUS_LABELS,
@@ -21,8 +24,11 @@ export default function MyApplications() {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
 
+  const { data, loading, error, refetch } = useApi(applicationApi.list, [])
+  const applications = data ?? []
+
   const filtered = useMemo(() => {
-    return MOCK_APPLICATIONS.filter((a) => {
+    return applications.filter((a) => {
       const matchesStatus = statusFilter === 'ALL' || a.status === statusFilter
       const needle = query.trim().toLowerCase()
       const matchesQuery =
@@ -31,7 +37,7 @@ export default function MyApplications() {
         a.instrumentLabel.toLowerCase().includes(needle)
       return matchesStatus && matchesQuery
     })
-  }, [query, statusFilter])
+  }, [query, statusFilter, applications])
 
   return (
     <PortalLayout
@@ -89,6 +95,13 @@ export default function MyApplications() {
       </div>
 
       {/* Results */}
+      <AsyncState
+        loading={loading}
+        error={error}
+        onRetry={refetch}
+        empty={applications.length === 0}
+        emptyMessage="You have not submitted any verification applications yet."
+      >
       {filtered.length === 0 ? (
         <div className="rounded border border-slate-200 bg-white p-10 text-center">
           <FileText size={32} className="mx-auto text-slate-300" aria-hidden="true" />
@@ -191,6 +204,7 @@ export default function MyApplications() {
           ))}
         </div>
       )}
+      </AsyncState>
     </PortalLayout>
   )
 }

@@ -5,9 +5,17 @@ import {
 } from 'lucide-react'
 import PublicLayout from '../../components/layout/PublicLayout'
 import StatusPill from '../../components/common/StatusPill'
-import {
-  lookupCertificate, formatDate, daysUntil, SAMPLE_CERTIFICATE_NOS,
-} from '../../services/mockData'
+import { formatDate, daysUntil } from '../../services/format'
+import { certificateApi } from '../../services/api'
+
+/**
+ * Certificate numbers offered so a reviewer can try the page without a real
+ * instrument to hand. They correspond to records created by the backend seed.
+ */
+const SAMPLE_CERTIFICATE_NOS = [
+  { no: 'LM/UP/KNX/2025/004417', note: 'Valid' },
+  { no: 'LM/UP/KNX/2024/000913', note: 'Expired' },
+]
 import {
   CERTIFICATE_STATUS, VERIFICATION_RESULT_LABELS,
 } from '../../constants/legalMetrology'
@@ -32,6 +40,7 @@ export default function VerifyCertificate() {
   const [result, setResult] = useState(null)
   const [notFound, setNotFound] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [lookupError, setLookupError] = useState(null)
 
   // A QR scan lands on /verify/:certificateNo, so resolve it on mount.
   useEffect(() => {
@@ -43,10 +52,17 @@ export default function VerifyCertificate() {
     setLoading(true)
     setNotFound(false)
     setResult(null)
+    setLookupError(null)
     try {
-      const found = await lookupCertificate(value)
-      if (found) setResult(found)
+      // `found: false` is a normal answer from the API, not an error — the
+      // "not found" panel carries the statutory warning, which is the useful
+      // part of the response for a consumer holding a forged sticker.
+      const response = await certificateApi.verifyPublic(value)
+      if (response.found) setResult(response.certificate)
       else setNotFound(true)
+    } catch (err) {
+      setNotFound(true)
+      setLookupError(err.message)
     } finally {
       setLoading(false)
     }
@@ -90,7 +106,7 @@ export default function VerifyCertificate() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. LM/UP/KNR/2025/004417"
+              placeholder="e.g. LM/UP/KNX/2025/004417"
               autoComplete="off"
               className="flex-1 rounded border border-slate-300 px-3 py-2.5 text-sm
                          focus:border-gov-blue focus:outline-none focus:ring-1 focus:ring-gov-blue"
